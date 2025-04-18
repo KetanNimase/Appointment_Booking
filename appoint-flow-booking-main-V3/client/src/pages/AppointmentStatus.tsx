@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { format } from 'date-fns';
+import { useAppointment } from '../context/AppointmentContext';
+import { X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +14,12 @@ import {
 const AppointmentStatus: React.FC = () => {
   const navigate = useNavigate();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const { selectedProvider, selectedReason, appointmentRequest } = useAppointment();
+
+  // Format the appointment date and time for display
+  const formattedDate = appointmentRequest.appointment_date 
+    ? format(new Date(appointmentRequest.appointment_date), 'hh:mm a EEEE, MMMM d, yyyy')
+    : 'Date not selected';
 
   const handleCancel = () => {
     setShowCancelDialog(true);
@@ -25,47 +34,75 @@ const AppointmentStatus: React.FC = () => {
     navigate('/request-appointment');
   };
 
+  // Function to close the browser tab
+  const handleCloseTab = () => {
+    window.close();
+  };
+
   return (
-    <div className="min-h-screen flex">
-      {/* Left Panel */}
-      <div className="w-1/2 bg-blue-500 flex items-center justify-center p-8">
-        <div className="text-center text-white">
-          <div className="mb-4">
-            <div className="w-24 h-24 bg-white/10 rounded-full mx-auto flex items-center justify-center">
-              <svg className="w-12 h-12" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                <path d="M8 12a4 4 0 108 0 4 4 0 00-8 0z" fill="currentColor"/>
-              </svg>
-            </div>
-          </div>
-          <h2 className="text-2xl font-semibold mb-2">demo test</h2>
-          <div className="text-white/90">
-            <p>You have an upcoming appointment</p>
-            <p>09:30 AM Friday, April 18, 2025</p>
-            <p>Reason: AE</p>
-          </div>
-        </div>
+    <div className="min-h-screen flex flex-col">
+      {/* Close button in top-right corner */}
+      <div className="absolute top-4 right-4">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={handleCloseTab}
+          className="rounded-full hover:bg-gray-200"
+        >
+          <X className="h-6 w-6" />
+        </Button>
       </div>
 
-      {/* Right Panel */}
-      <div className="w-1/2 bg-white flex items-center justify-center p-8">
-        <div className="max-w-md w-full">
-          <h2 className="text-xl mb-6">Thank you for booking an appointment with us.</h2>
-          <div className="flex gap-4">
-            <Button
-              variant="outline"
-              onClick={handleCancel}
-              className="flex-1"
-            >
-              Cancel Appointment
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleReschedule}
-              className="flex-1"
-            >
-              Reschedule
-            </Button>
+      <div className="flex flex-grow">
+        {/* Left Panel */}
+        <div className="w-1/2 bg-blue-500 flex items-center justify-center p-8">
+          <div className="text-center text-white">
+            <div className="mb-4">
+              <div className="w-24 h-24 bg-white/10 rounded-full mx-auto flex items-center justify-center">
+                <svg className="w-12 h-12" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M8 12a4 4 0 108 0 4 4 0 00-8 0z" fill="currentColor"/>
+                </svg>
+              </div>
+            </div>
+            <h2 className="text-2xl font-semibold mb-2">{selectedProvider?.name || 'Provider not selected'}</h2>
+            <div className="text-white/90">
+              <p>You have an upcoming appointment</p>
+              <p>{formattedDate}</p>
+              <p>Reason: {selectedReason?.name || 'Reason not specified'}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Panel */}
+        <div className="w-1/2 bg-white flex items-center justify-center p-8">
+          <div className="max-w-md w-full">
+            <h2 className="text-xl mb-6">Thank you for booking an appointment with us.</h2>
+            <div className="flex gap-4">
+              <Button
+                variant="outline"
+                onClick={handleCancel}
+                className="flex-1"
+              >
+                Cancel Appointment
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleReschedule}
+                className="flex-1"
+              >
+                Reschedule
+              </Button>
+            </div>
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                onClick={handleCloseTab}
+                className="w-full"
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       </div>

@@ -4,13 +4,12 @@ import emailjs from '@emailjs/browser';
 import { useNavigate } from 'react-router-dom';
 
 const AppointmentConfirmed: React.FC = () => {
-  const { appointmentRequest } = useAppointment();
+  const { appointmentRequest, selectedProvider } = useAppointment();
   const navigate = useNavigate();
 
   useEffect(() => {
     const sendEmail = async () => {
       console.log('Current appointment request:', appointmentRequest);
-
 
       // Validate required fields before sending email
       const patientData = JSON.parse(localStorage.getItem('patientFormData') || '{}');
@@ -25,7 +24,7 @@ const AppointmentConfirmed: React.FC = () => {
       try {
         const templateParams = {
           to_name: appointmentRequest?.patient_name || 'Patient',
-          doctor_name: (appointmentRequest as any)?.provider?.name || 'Dr. Pune Doc',
+          doctor_name: selectedProvider?.name || 'Dr. Pune Doc',
           appointment_date: appointmentRequest?.appointment_date ?
             new Date(appointmentRequest.appointment_date).toLocaleDateString('en-US', {
               weekday: 'long',
@@ -64,7 +63,7 @@ const AppointmentConfirmed: React.FC = () => {
     if (appointmentRequest) {
       sendEmail();
     }
-  }, [appointmentRequest]);
+  }, [appointmentRequest, selectedProvider]);
 
   return (
     <div className="min-h-screen flex">
@@ -79,7 +78,7 @@ const AppointmentConfirmed: React.FC = () => {
             />
           </div>
           <h2 className="text-2xl font-bold mb-6">Appointment Confirmed</h2>
-          <p className="text-lg mb-2">Dr. {(appointmentRequest as any)?.provider?.name || 'Pune Doc'}</p>
+          <p className="text-lg mb-2">Dr. {selectedProvider?.name || 'Pune Doc'}</p>
           <p className="text-lg mb-6">
             {appointmentRequest?.appointment_time || '09:00 AM'} {' '}
             {appointmentRequest?.appointment_date ?

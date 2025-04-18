@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Calendar } from "lucide-react";
+import bookingService from '../services/api';
 
 const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
 const dateRegex = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
@@ -38,7 +39,8 @@ const formSchema = z.object({
 
 const PatientForm: React.FC = () => {
   const navigate = useNavigate();
-  const { appointmentRequest, setAppointmentRequest } = useAppointment();
+  const { appointmentRequest, setAppointmentRequest, selectedProvider } = useAppointment();
+  const [showUnavailableDialog, setShowUnavailableDialog] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -53,19 +55,60 @@ const PatientForm: React.FC = () => {
   });
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
-    // Store in both localStorage and context
-    localStorage.setItem('patientFormData', JSON.stringify({
-      ...data,
-      email: data.email.toLowerCase().trim()
-    }));
+    try {
+      // Create the patient name
+      const patientName = `${data.legalFirstName} ${data.lastName}`;
+      
+      // First, book the slot with the backend including patient name
+      if (appointmentRequest.appointment_date && appointmentRequest.appointment_time && selectedProvider?.id) {
+        // Get location information - ensure it's a string value
+        const locationValue = String(appointmentRequest.location_id || selectedProvider.location_id || '');
+        
+        console.log('Booking appointment with:', {
+          provider_id: selectedProvider.id,
+          appointment_date: appointmentRequest.appointment_date,
+          appointment_time: appointmentRequest.appointment_time,
+          patient_name: patientName,
+          location: locationValue
+        });
+        
+        const response = await bookingService.post('/book-slot', {
+          provider_id: selectedProvider.id,
+          appointment_date: appointmentRequest.appointment_date,
+          appointment_time: appointmentRequest.appointment_time,
+          patient_name: patientName,
+          location: locationValue
+        });
+        
+        console.log('Booking response:', response);
+      } else {
+        console.error('Missing required booking information:', {
+          date: appointmentRequest.appointment_date,
+          time: appointmentRequest.appointment_time,
+          provider: selectedProvider?.id
+        });
+        throw new Error('Missing required booking information');
+      }
 
-    setAppointmentRequest(prev => ({
-      ...prev,
-      patient_details: data,
-      email: data.email.toLowerCase().trim()
-    }));
+      // Store in both localStorage and context (existing functionality)
+      localStorage.setItem('patientFormData', JSON.stringify({
+        ...data,
+        email: data.email.toLowerCase().trim()
+      }));
 
-    navigate('/appointment-confirmed');
+      setAppointmentRequest(prev => ({
+        ...prev,
+        patient_details: data,
+        email: data.email.toLowerCase().trim(),
+        patient_name: patientName // Also update in the context
+      }));
+
+      navigate('/appointment-confirmed');
+    } catch (error) {
+      console.error('Error booking appointment:', error);
+      // Show error dialog or message
+      setShowUnavailableDialog(true);
+    }
   };
 
   return (
@@ -176,7 +219,7 @@ const PatientForm: React.FC = () => {
         </div>
 
         {/* Unavailable Appointment Dialog */}
-        <Dialog open={false} onOpenChange={() => { }}>
+        <Dialog open={showUnavailableDialog} onOpenChange={setShowUnavailableDialog}>
           <DialogContent className="sm:max-w-md">
             <div className="flex items-center gap-4">
               <div className="p-2 bg-blue-100 rounded-full">
@@ -190,7 +233,7 @@ const PatientForm: React.FC = () => {
               <Button
                 type="button"
                 className="bg-blue-500 text-white px-8"
-                onClick={() => navigate('/appointment')}
+                onClick={() => navigate('/select-time')}
               >
                 Ok
               </Button>
@@ -202,5 +245,6 @@ const PatientForm: React.FC = () => {
   );
 };
 
-// Create a new file for the verification page
 export default PatientForm;
+
+

@@ -1,0 +1,292 @@
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import mysql from 'mysql2/promise';
+import { init, send } from '@emailjs/nodejs';
+
+// Define interfaces for request bodies
+interface SendOTPRequest {
+  appointment_id: number;
+}
+
+// Initialize Express app
+const app = express();
+
+// Middleware setup
+app.use(cors({
+  origin: 'http://localhost:8080',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
+app.use(express.json());
+
+// Database connection
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  password: 'root123',
+  database: 'appointment_booking',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
+// Initialize EmailJS
+init({
+  publicKey: "ngfcrIBDBDILAGrej",
+  privateKey: "your_private_key",
+});
+
+// Database initialization
+const initDb = async () => {
+  try {
+    const connection = await pool.getConnection();
+    
+    // Create or update tables
+    await connection.execute(`
+      ALTER TABLE appointments 
+      ADD COLUMN IF NOT EXISTS verification_status ENUM('pending', 'verified') 
+      DEFAULT 'pending'
+    `);
+
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS patient_details (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        appointment_id INT,
+        legal_first_name VARCHAR(100),
+        last_name VARCHAR(100),
+        preferred_name VARCHAR(100),
+        dob DATE,
+        FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+      )
+    `);
+
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS verification_codes (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        appointment_id INT,
+        code VARCHAR(6),
+        expires_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+      )
+    `);
+
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS booked_slots (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        provider_id INT,
+        appointment_date DATE,
+        appointment_time TIME,
+        patient_name VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    connection.release();
+  } catch (error) {
+    console.error('Database initialization error:', error);
+  }
+};
+
+// Error handler middleware
+const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+};
+
+// API Routes
+// Appointments
+app.post('/api/appointments', async (req: Request, res: Response) => {
+  try {
+    const { 
+      location_id, 
+      appointment_date, 
+      appointment_time,
+      patient_name,
+      email,
+      phone,
+      provider_id
+    } = req.body;
+
+    const [result] = await pool.execute(
+      'INSERT INTO appointments (location_id, appointment_date, appointment_time, patient_name, email, phone) VALUES (?, ?, ?, ?, ?, ?)',
+      [location_id, appointment_date, appointment_time, patient_name, email, phone]
+    );
+
+    res.json({ success: true, appointmentId: (result as any).insertId });
+  } catch (error) {
+    console.error('Error creating appointment:', error);
+    res.status(500).json({ error: 'Failed to create appointment' });
+  }
+});
+
+// Verification
+app.post('/api/verify/verify-otp', async (req: Request, res: Response) => {
+  try {
+    const { appointment_id, code } = req.body;
+    const [codes] = await pool.execute(
+      'SELECT * FROM verification_codes WHERE appointment_id = ? AND code = ? AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
+      [appointment_id, code]
+    );
+
+    if (Array.isArray(codes) && codes.length > 0) {
+      await pool.execute(
+        'UPDATE appointments SET verification_status = "verified" WHERE id = ?',
+        [appointment_id]
+      );
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ error: 'Invalid or expired code' });
+    }
+  } catch (error) {
+    console.error('Verification error:', error);
+    res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+// Locations
+app.get('/api/locations', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [locations] = await pool.execute('SELECT * FROM locations');
+    res.json(locations);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/locations/:id', async (req: Request, res: Response) => {
+  try {
+    const [locations] = await pool.execute(
+      'SELECT * FROM locations WHERE id = ?',
+      [req.params.id]
+    );
+    
+    if (Array.isArray(locations) && locations.length > 0) {
+      res.json(locations[0]);
+    } else {
+      res.status(404).json({ error: 'Location not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching location:', error);
+    res.status(500).json({ error: 'Failed to fetch location' });
+  }
+});
+
+app.get('/api/locations/:id/hours', async (req: Request, res: Response) => {
+  try {
+    const [hours] = await pool.execute(
+      'SELECT * FROM office_hours WHERE location_id = ? ORDER BY FIELD(day_of_week, "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")',
+      [req.params.id]
+    );
+    res.json(hours);
+  } catch (error) {
+    console.error('Error fetching office hours:', error);
+    res.status(500).json({ error: 'Failed to fetch office hours' });
+  }
+});
+
+// Providers
+app.get('/api/providers', async (req: Request, res: Response) => {
+  try {
+    const [providers] = await pool.execute('SELECT * FROM providers');
+    res.json(providers);
+  } catch (error) {
+    console.error('Error fetching providers:', error);
+    res.status(500).json({ error: 'Failed to fetch providers' });
+  }
+});
+
+app.get('/api/locations/:locationId/providers', async (req: Request, res: Response) => {
+  try {
+    const [providers] = await pool.execute(
+      'SELECT * FROM providers WHERE location_id = ?',
+      [req.params.locationId]
+    );
+    res.json(providers);
+  } catch (error) {
+    console.error('Error fetching providers by location:', error);
+    res.status(500).json({ error: 'Failed to fetch providers' });
+  }
+});
+
+// Appointment reasons
+app.get('/api/appointment-reasons', async (req: Request, res: Response) => {
+  try {
+    const [reasons] = await pool.execute('SELECT * FROM appointment_reasons');
+    res.json(reasons);
+  } catch (error) {
+    console.error('Error fetching appointment reasons:', error);
+    res.status(500).json({ error: 'Failed to fetch appointment reasons' });
+  }
+});
+
+// Booking slots
+app.get('/api/booked-slots', async (req: Request, res: Response) => {
+  try {
+    const { provider_id } = req.query;
+    const [slots] = await pool.execute(
+      'SELECT appointment_date, appointment_time, provider_id FROM booked_slots WHERE provider_id = ?',
+      [provider_id]
+    );
+    res.json(slots);
+  } catch (error) {
+    console.error('Error fetching booked slots:', error);
+    res.status(500).json({ error: 'Failed to fetch booked slots' });
+  }
+});
+
+// Add a route to handle /api/booked-slots/:providerId format
+app.get('/api/booked-slots/:providerId', async (req: Request, res: Response) => {
+  try {
+    const providerId = req.params.providerId;
+    const [slots] = await pool.execute(
+      'SELECT appointment_date, appointment_time, provider_id FROM booked_slots WHERE provider_id = ?',
+      [providerId]
+    );
+    res.json(slots);
+  } catch (error) {
+    console.error('Error fetching booked slots by provider ID:', error);
+    res.status(500).json({ error: 'Failed to fetch booked slots' });
+  }
+});
+
+app.post('/api/book-slot', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { provider_id, appointment_date, appointment_time } = req.body;
+    
+    // Check if slot is already booked
+    const [existing] = await pool.execute(
+      'SELECT id FROM booked_slots WHERE provider_id = ? AND appointment_date = ? AND appointment_time = ?',
+      [provider_id, appointment_date, appointment_time]
+    );
+
+    if (Array.isArray(existing) && existing.length > 0) {
+      return res.status(400).json({ error: 'Slot already booked' });
+    }
+
+    // Book the slot
+    await pool.execute(
+      'INSERT INTO booked_slots (provider_id, appointment_date, appointment_time) VALUES (?, ?, ?)',
+      [provider_id, appointment_date, appointment_time]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error booking slot:', error);
+    res.status(500).json({ error: 'Failed to book slot' });
+  }
+});
+
+// Apply error handler
+app.use(errorHandler);
+
+// Initialize database and start server
+initDb().then(() => {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}).catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});
