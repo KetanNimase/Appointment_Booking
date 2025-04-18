@@ -45,6 +45,17 @@ const SelectTime: React.FC = () => {
     temporary?: boolean;
   }>>([]);
 
+  // Update startDate when selectedDate changes
+  useEffect(() => {
+    if (selectedDate) {
+      // When a date is selected, use that as the start date
+      setStartDate(selectedDate);
+    } else {
+      // By default, use the current date
+      setStartDate(new Date());
+    }
+  }, [selectedDate]);
+
   // Fetch booked slots
   useEffect(() => {
     const fetchBookedSlots = async () => {
@@ -110,7 +121,13 @@ const SelectTime: React.FC = () => {
                 onSelect={setSelectedDate}
                 initialFocus
                 className={cn("p-3 pointer-events-auto")}
-                disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                disabled={(date) => {
+                  const day = date.getDay();
+                  // Disable past dates and weekends (Saturday = 6, Sunday = 0)
+                  return date < new Date(new Date().setHours(0, 0, 0, 0)) || 
+                         day === 0 || 
+                         day === 6;
+                }}
                 classNames={{
                   day_selected: "bg-blue-500 text-white hover:bg-blue-500 hover:text-white",
                   day_today: "bg-gray-100 text-gray-900"
